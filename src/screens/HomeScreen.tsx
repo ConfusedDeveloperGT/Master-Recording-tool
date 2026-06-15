@@ -4,10 +4,28 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated } from 'react-native';
-import { useAudioRecorder, useAudioRecorderState, useAudioStream, RecordingPresets } from 'expo-audio';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Platform } from 'react-native';
+
+let useAudioRecorder: any = () => ({
+  prepareToRecordAsync: async () => {},
+  record: () => {},
+  stop: async () => {},
+  uri: ''
+});
+let useAudioRecorderState: any = () => ({ durationMillis: 0 });
+let useAudioStream: any = () => null;
+let RecordingPresets: any = { HIGH_QUALITY: {} };
+
+if (Platform.OS !== 'web') {
+  const expoAudio = require('expo-audio');
+  useAudioRecorder = expoAudio.useAudioRecorder;
+  useAudioRecorderState = expoAudio.useAudioRecorderState;
+  useAudioStream = expoAudio.useAudioStream;
+  RecordingPresets = expoAudio.RecordingPresets;
+}
 import { wsService, WsMessage } from '../services/WebSocketService';
-import { requestMicPermission, configureAudioForRecording, formatDuration, arrayBufferToBase64, uploadRecordingToServer, STREAM_OPTIONS } from '../services/AudioService';
+import { requestMicPermission, configureAudioForRecording, formatDuration, arrayBufferToBase64, uploadRecordingToServer, uploadBlobToServer, STREAM_OPTIONS } from '../services/AudioService';
+import { webAudioService } from '../services/WebAudioService';
 import { addToOfflineQueue, processOfflineQueue } from '../services/OfflineQueue';
 import NetInfo from '@react-native-community/netinfo';
 
@@ -46,7 +64,12 @@ export default function HomeScreen({ deviceId, deviceName, backgroundRecording, 
   // ── Init ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      const granted = await requestMicPermission();
+      let granted = false;
+      if (Platform.OS === 'web') {
+        granted = await webAudioService.requestPermission();
+      } else {
+        granted = await requestMicPermission();
+      }
       setPermissionGranted(granted);
     })();
   }, []);
@@ -127,6 +150,13 @@ export default function HomeScreen({ deviceId, deviceName, backgroundRecording, 
     if (isRecordingRef.current) return; // Already recording physically
     
     try {
+      if (Platform.OS === 'web') {
+        await webAudioService.startRecording();
+        isRecordingRef.current = true;
+        if (startedBy === 'manager') wsService.send({ type: 'recording_started', deviceId });
+        return;
+      }
+
       await configureAudioForRecording(backgroundRecording);
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
@@ -147,6 +177,25 @@ export default function HomeScreen({ deviceId, deviceName, backgroundRecording, 
     if (!isRecordingRef.current) return;
 
     try {
+      if (Platform.OS === 'web') {
+        const { blob, durationMillis } = await webAudioService.stopRecording();
+        isRecordingRef.current = false;
+        const duration = durationMillis / 1000;
+        if (wsService.isConnected) {
+          wsService.send({ type: 'recording_saved', deviceId, filename: 'web_rec.webm', duration, size: blob.size });
+        }
+        const isOnline = (await NetInfo.fetch()).isConnected;
+        if (isOnline && serverHttpUrl && wsService.isConnected) {
+          if (stoppedBy === 'user') setUploadStatus('Uploading…');
+          const ok = await uploadBlobToServer(blob, serverHttpUrl, deviceId, authToken);
+          if (stoppedBy === 'user') {
+            setUploadStatus(ok ? 'Uploaded to Manager' : 'Failed to upload');
+            setTimeout(() => setUploadStatus(null), 3000);
+          }
+        }
+        return;
+      }
+
       await audioRecorder.stop();
       const uri = audioRecorder.uri;
       isRecordingRef.current = false;
@@ -195,9 +244,27 @@ export default function HomeScreen({ deviceId, deviceName, backgroundRecording, 
 
   // ── Streaming ──────────────────────────────────────────────────────────────
   const startStreaming = async () => {
-    if (!permissionGranted || !streamResult) return;
+    if (!permissionGranted) return;
     if (isStreamingRef.current) return;
     try {
+      if (Platform.OS === 'web') {
+        await webAudioService.startStreaming((base64, sampleRate) => {
+          if (!isStreamingRef.current) return;
+          wsService.send({
+            type: 'audio_chunk',
+            deviceId,
+            chunk: base64,
+            sampleRate: sampleRate,
+            channels: 1,
+            timestamp: Date.now(),
+          });
+        });
+        isStreamingRef.current = true;
+        wsService.send({ type: 'stream_started', deviceId });
+        return;
+      }
+
+      if (!streamResult) return;
       await configureAudioForRecording(backgroundRecording);
       const audioStream = streamResult.stream;
       streamListenerRef.current = audioStream.addListener('audioStreamBuffer', (buffer) => {
@@ -220,6 +287,14 @@ export default function HomeScreen({ deviceId, deviceName, backgroundRecording, 
 
   const stopStreaming = () => {
     if (!isStreamingRef.current) return;
+    
+    if (Platform.OS === 'web') {
+      webAudioService.stopStreaming();
+      isStreamingRef.current = false;
+      wsService.send({ type: 'stream_stopped', deviceId });
+      return;
+    }
+
     streamListenerRef.current?.remove();
     streamListenerRef.current = null;
     streamResult?.stream?.stop();

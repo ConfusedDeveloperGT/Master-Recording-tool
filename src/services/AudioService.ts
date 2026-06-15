@@ -6,12 +6,28 @@
  * via legacy import for listing (acceptable workaround).
  */
 
-import {
-  RecordingPresets,
-  setAudioModeAsync,
-  requestRecordingPermissionsAsync,
-} from 'expo-audio';
-import { Directory, File, Paths, UploadType } from 'expo-file-system';
+import { Platform } from 'react-native';
+
+let RecordingPresets: any = { HIGH_QUALITY: {} };
+let setAudioModeAsync: any = async () => {};
+let requestRecordingPermissionsAsync: any = async () => ({ granted: true });
+let Directory: any = class { list() { return []; } constructor() {} };
+let File: any = class { constructor() {} name=''; uri=''; delete() {} async upload() { return { status: 200 }; } };
+let Paths: any = { document: '' };
+let UploadType: any = { MULTIPART: 1 };
+
+if (Platform.OS !== 'web') {
+  const expoAudio = require('expo-audio');
+  RecordingPresets = expoAudio.RecordingPresets;
+  setAudioModeAsync = expoAudio.setAudioModeAsync;
+  requestRecordingPermissionsAsync = expoAudio.requestRecordingPermissionsAsync;
+
+  const expoFs = require('expo-file-system');
+  Directory = expoFs.Directory;
+  File = expoFs.File;
+  Paths = expoFs.Paths;
+  UploadType = expoFs.UploadType;
+}
 
 // ── Recording Options ─────────────────────────────────────────────────────────
 export const RECORDING_OPTIONS = { ...RecordingPresets.HIGH_QUALITY };
@@ -138,6 +154,29 @@ export async function uploadRecordingToServer(
       console.warn('[Audio] Fetch upload also failed:', e2);
       return false;
     }
+  }
+}
+
+export async function uploadBlobToServer(
+  blob: Blob,
+  serverHttpUrl: string,
+  deviceId: string,
+  authToken: string,
+): Promise<boolean> {
+  try {
+    const formData = new FormData();
+    formData.append('deviceId', deviceId);
+    formData.append('file', blob, `web_recording_${Date.now()}.webm`);
+
+    const res = await fetch(`${serverHttpUrl}/api/recordings/upload`, {
+      method: 'POST',
+      headers: { 'x-auth-token': authToken },
+      body: formData,
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[Audio] Web Blob Upload failed:', err);
+    return false;
   }
 }
 
