@@ -55,6 +55,11 @@
           "enableBackgroundPlayback": true
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ab31a995-9df7-4453-93cd-d25b2968f5b3"
+      }
+    }
   }
 }
