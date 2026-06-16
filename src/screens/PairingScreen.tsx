@@ -15,10 +15,8 @@ export default function PairingScreen({ onPair }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
   const [manualCode, setManualCode] = useState('');
-  
-  // Hardcoded for demo, but normally the QR code contains this.
-  const DEFAULT_HTTP = 'http://192.168.1.100:3001'; 
-  const DEFAULT_WS = 'ws://192.168.1.100:3001';
+  const [serverUrl, setServerUrl] = useState('http://10.45.10.121:3001');
+
 
   const handleBarcodeScanned = ({ data }: { data: string }) => {
     try {
@@ -35,14 +33,11 @@ export default function PairingScreen({ onPair }: Props) {
   };
 
   const handleManualSubmit = () => {
-    if (manualCode.length >= 6) {
-      // For manual entry, we'll need the user to configure URL elsewhere,
-      // or we assume they are using a public Railway URL.
-      // For simplicity in this demo, if they enter a code, we use local network 
-      // or a hardcoded default public URL.
-      onPair(DEFAULT_WS, DEFAULT_HTTP, manualCode);
+    if (manualCode.length >= 6 && serverUrl.startsWith('http')) {
+      const wsUrl = serverUrl.replace(/^http/, 'ws');
+      onPair(wsUrl, serverUrl, manualCode);
     } else {
-      Alert.alert('Invalid Code', 'Please enter a valid 6-digit code.');
+      Alert.alert('Invalid Input', 'Please enter a valid Server URL and 6-digit code.');
     }
   };
 
@@ -64,12 +59,13 @@ export default function PairingScreen({ onPair }: Props) {
       <View style={styles.container}>
         <CameraView
           style={StyleSheet.absoluteFillObject}
+          facing="back"
           onBarcodeScanned={handleBarcodeScanned}
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
         />
         <View style={styles.scannerOverlay}>
           <Text style={styles.scannerText}>Point at the Manager QR Code</Text>
-          <TouchableOpacity style={[styles.btn, { marginTop: 40 }]} onPress={() => setScanning(false)}>
+          <TouchableOpacity style={[styles.btn, styles.btnGhost, { marginTop: 40, width: 200 }]} onPress={() => setScanning(false)}>
             <Text style={styles.btnText}>Cancel</Text>
           </TouchableOpacity>
         </View>
@@ -94,6 +90,17 @@ export default function PairingScreen({ onPair }: Props) {
       </View>
 
       <View style={styles.card}>
+        <Text style={styles.label}>Server URL</Text>
+        <TextInput
+          style={[styles.input, { fontSize: 16, letterSpacing: 1 }]}
+          placeholder="http://10.45.10.121:3001"
+          placeholderTextColor="#475569"
+          value={serverUrl}
+          onChangeText={setServerUrl}
+          autoCapitalize="none"
+          keyboardType="url"
+        />
+
         <Text style={styles.label}>Enter 6-Digit Pairing Code</Text>
         <TextInput
           style={styles.input}
@@ -127,6 +134,6 @@ const styles = StyleSheet.create({
   divider: { flexDirection: 'row', alignItems: 'center', width: '100%', marginVertical: 24 },
   line: { flex: 1, height: 1, backgroundColor: BORDER },
   or: { color: '#475569', paddingHorizontal: 12, fontSize: 12, fontWeight: '600' },
-  scannerOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
+  scannerOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 60 },
   scannerText: { color: '#fff', fontSize: 18, fontWeight: '600', backgroundColor: 'rgba(0,0,0,0.8)', padding: 16, borderRadius: 8 },
 });

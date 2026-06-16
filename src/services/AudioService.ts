@@ -7,10 +7,12 @@
  */
 
 import { Platform } from 'react-native';
+import { supabase } from './SupabaseClient';
 
 let RecordingPresets: any = { HIGH_QUALITY: {} };
 let setAudioModeAsync: any = async () => {};
 let requestRecordingPermissionsAsync: any = async () => ({ granted: true });
+let requestNotificationPermissionsAsync: any = async () => ({ granted: true });
 let Directory: any = class { list() { return []; } constructor() {} };
 let File: any = class { constructor() {} name=''; uri=''; delete() {} async upload() { return { status: 200 }; } };
 let Paths: any = { document: '' };
@@ -21,6 +23,9 @@ if (Platform.OS !== 'web') {
   RecordingPresets = expoAudio.RecordingPresets;
   setAudioModeAsync = expoAudio.setAudioModeAsync;
   requestRecordingPermissionsAsync = expoAudio.requestRecordingPermissionsAsync;
+  if (expoAudio.requestNotificationPermissionsAsync) {
+    requestNotificationPermissionsAsync = expoAudio.requestNotificationPermissionsAsync;
+  }
 
   const expoFs = require('expo-file-system');
   Directory = expoFs.Directory;
@@ -42,6 +47,13 @@ export const STREAM_OPTIONS = {
 // ─── Permission ───────────────────────────────────────────────────────────────
 export async function requestMicPermission(): Promise<boolean> {
   const { granted } = await requestRecordingPermissionsAsync();
+  if (granted && Platform.OS !== 'web') {
+    try {
+      await requestNotificationPermissionsAsync();
+    } catch (e) {
+      console.warn('[Audio] Failed to request notification permission:', e);
+    }
+  }
   return granted;
 }
 
@@ -119,41 +131,37 @@ export async function uploadRecordingToServer(
   authToken: string,
 ): Promise<boolean> {
   try {
-    const file = new File(fileUri);
-    const filename = file.name;
+    const filename = fileUri.split('/').pop() || `rec_${Date.now()}.m4a`;
+    const filePath = `${deviceId}/${filename}`;
 
-    const result = await file.upload(`${serverHttpUrl}/api/recordings/upload`, {
-      uploadType: UploadType.MULTIPART,
-      fieldName: 'file',
-      mimeType: 'audio/mp4',
-      parameters: { deviceId },
-      headers: { 'x-auth-token': authToken },
+    const formData = new FormData();
+    formData.append('file', {
+      uri: fileUri,
+      name: filename,
+      type: 'audio/mp4',
+    } as any);
+
+    const { data, error } = await supabase.storage
+      .from('micnet_recordings')
+      .upload(filePath, formData, {
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (error) throw error;
+
+    const { error: dbError } = await supabase.from('recordings').insert({
+      device_id: deviceId,
+      filename: filename,
+      url: data?.path || filePath,
     });
 
-    return result.status >= 200 && result.status < 300;
+    if (dbError) throw dbError;
+
+    return true;
   } catch (err) {
-    console.warn('[Audio] Upload failed (trying fetch fallback):', err);
-
-    // Fallback: fetch FormData upload
-    try {
-      const formData = new FormData();
-      formData.append('deviceId', deviceId);
-      formData.append('file', {
-        uri: fileUri,
-        name: fileUri.split('/').pop() ?? 'recording.m4a',
-        type: 'audio/mp4',
-      } as any);
-
-      const res = await fetch(`${serverHttpUrl}/api/recordings/upload`, {
-        method: 'POST',
-        headers: { 'x-auth-token': authToken },
-        body: formData,
-      });
-      return res.ok;
-    } catch (e2) {
-      console.warn('[Audio] Fetch upload also failed:', e2);
-      return false;
-    }
+    console.warn('[Audio] Upload to Supabase failed:', err);
+    return false;
   }
 }
 

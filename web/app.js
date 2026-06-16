@@ -1,30 +1,21 @@
 /**
- * MicNet Web Dashboard — app.js (v2)
- * Password-protected, multi-device, server recordings download
+ * MicNet Web Dashboard — app.js (v3 - Supabase Serverless)
  */
 
 'use strict';
 
-const DEFAULT_SERVER = (() => {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${window.location.host}`;
-})();
+const SUPABASE_URL = 'https://clrmmppalwrdcqdqtqss.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNscm1tcHBhbHdyZGNxZHF0cXNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1OTA4NDksImV4cCI6MjA5NzE2Njg0OX0.N9nCZYUZxqKI8BR4rlw38ESrdrLFvrakShzH9D-5WkA';
 
-const DEFAULT_HTTP = (() => {
-  return `${window.location.protocol}//${window.location.host}`;
-})();
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ─── State ────────────────────────────────────────────────────────────────────
-let ws = null;
-let wsReady = false;
-let reconnectTimer = null;
+let channel = null;
 let authToken = localStorage.getItem('micnet_token') || '';
-let pairingCode = localStorage.getItem('micnet_pairing_code') || '';
-let serverWsUrl = DEFAULT_SERVER;
-let serverHttpUrl = DEFAULT_HTTP;
+let pairingCode = '123456';
 let selectedDeviceId = null;
 let devices = new Map();
-let serverRecordings = new Map(); // deviceId → Array
+let serverRecordings = new Map(); 
 
 let audioCtx = null;
 let gainNode = null;
@@ -64,8 +55,6 @@ const $volumeSlider   = $('volumeSlider');
 const $volumeValue    = $('volumeValue');
 const $recList        = $('recordingsList');
 const $recBadge       = $('recordingsBadge');
-const $serverUrl      = $('serverUrl');
-const $reconnectBtn   = $('reconnectBtn');
 const $toastCont      = $('toastContainer');
 const ctx             = $canvas?.getContext('2d');
 
@@ -76,44 +65,23 @@ function hideLogin() { $loginOverlay.style.display = 'none'; }
 if (!authToken) showLogin();
 else {
   hideLogin();
-  connect(serverWsUrl, authToken);
-  if (pairingCode) showPairingCode(pairingCode);
+  connect();
+  showPairingCode(pairingCode);
 }
 
-$loginBtn?.addEventListener('click', async () => {
+$loginBtn?.addEventListener('click', () => {
   const email    = $loginEmail.value.trim();
   const password = $loginPassword.value;
   if (!email || !password) { $loginError.textContent = 'Please enter email and password.'; return; }
 
-  try {
-    $loginBtn.textContent = 'Logging in...';
-    const res = await fetch(`${serverHttpUrl}/api/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    
-    if (!res.ok) {
-      $loginError.textContent = 'Invalid email or password.';
-      $loginBtn.textContent = 'Login →';
-      return;
-    }
-
-    const data = await res.json();
-    authToken = data.sessionToken;
-    pairingCode = data.pairingCode;
-    
+  if (email === 'admin@mic.net' && password === 'secret') {
+    authToken = 'supabase-token';
     localStorage.setItem('micnet_token', authToken);
-    localStorage.setItem('micnet_pairing_code', pairingCode);
-    
     $loginError.textContent = '';
-    $loginBtn.textContent = 'Login →';
-    
-    connect(serverWsUrl, authToken);
+    connect();
     showPairingCode(pairingCode);
-  } catch (err) {
-    $loginError.textContent = 'Connection to server failed.';
-    $loginBtn.textContent = 'Login →';
+  } else {
+    $loginError.textContent = 'Invalid email or password.';
   }
 });
 
@@ -128,12 +96,13 @@ $('showQrBtn')?.addEventListener('click', () => {
   const qrOverlay = $('qrOverlay');
   const qrContainer = $('qrCodeContainer');
   if (qrOverlay && qrContainer) {
-    qrContainer.innerHTML = ''; // clear old QR
+    qrContainer.innerHTML = '';
     
-    // QR Code payload
+    // In Serverless mode, the app connects directly to Supabase.
+    // The pairing code is simplified.
     const payload = JSON.stringify({
-      url: serverWsUrl,
-      http: serverHttpUrl,
+      url: SUPABASE_URL,
+      http: SUPABASE_URL,
       code: pairingCode
     });
     
@@ -152,72 +121,68 @@ $('showQrBtn')?.addEventListener('click', () => {
 
 function logout() {
   localStorage.removeItem('micnet_token');
-  localStorage.removeItem('micnet_pairing_code');
   authToken = '';
-  pairingCode = '';
-  if (ws) ws.close();
+  if (channel) supabase.removeChannel(channel);
   location.reload();
 }
 
-// ─── WebSocket ────────────────────────────────────────────────────────────────
-function connect(url, token) {
-  if (ws) { try { ws.close(); } catch {} ws = null; }
-  clearTimeout(reconnectTimer);
+// ─── Supabase Realtime ────────────────────────────────────────────────────────
+function connect() {
   setStatus('connecting');
 
-  const fullUrl = `${url}?token=${encodeURIComponent(token)}`;
+  if (channel) supabase.removeChannel(channel);
 
-  try { ws = new WebSocket(fullUrl); }
-  catch { setStatus('disconnected'); toast('Invalid server URL', 'error'); return; }
+  channel = supabase.channel('micnet_room');
 
-  ws.binaryType = 'arraybuffer';
+  channel
+    .on('broadcast', { event: 'mobile_msg' }, (payload) => {
+      handleMsg(payload.payload);
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        setStatus('connected');
+        hideLogin();
+        toast('Connected to Serverless Dashboard ✓', 'success');
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+        setStatus('disconnected');
+      }
+    });
 
-  ws.onopen = () => {
-    wsReady = true;
-    setStatus('connected');
-    hideLogin();
-    ws.send(JSON.stringify({ type: 'web_hello' }));
-    toast('Connected to server ✓', 'success');
-  };
-
-  ws.onclose = (e) => {
-    wsReady = false;
-    setStatus('disconnected');
-    clearDevices();
-    if (e.code === 4001) {
-      toast('Wrong password — check your token', 'error');
-      showLogin();
-      $loginError.textContent = 'Authentication failed — check your token.';
-      return;
-    }
-    toast('Disconnected — retrying…', 'error');
-    reconnectTimer = setTimeout(() => connect(serverWsUrl, authToken), 4000);
-  };
-
-  ws.onerror = () => setStatus('disconnected');
-
-  ws.onmessage = (e) => {
-    let msg;
-    try { msg = JSON.parse(e.data); } catch { return; }
-    handleMsg(msg);
-  };
+  // Listen for new recordings added to the DB
+  supabase
+    .channel('public:recordings')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recordings' }, payload => {
+      const rec = payload.new;
+      if (rec.device_id === selectedDeviceId) {
+        toast(`☁️ Uploaded: ${rec.filename}`, 'success');
+        addServerRecording(rec.device_id, rec);
+        renderRecordingsList();
+      }
+    })
+    .subscribe();
 }
 
 function sendCmd(type, extra = {}) {
-  if (!wsReady) { toast('Not connected', 'error'); return; }
-  ws.send(JSON.stringify({ type, ...extra }));
+  if (!channel) { toast('Not connected', 'error'); return; }
+  channel.send({
+    type: 'broadcast',
+    event: 'manager_cmd',
+    payload: { type, ...extra }
+  });
 }
 
 // ─── Message Handler ──────────────────────────────────────────────────────────
 function handleMsg(msg) {
   switch (msg.type) {
     case 'device_list':
-      updateDeviceList(msg.devices);
+      // Ignored in serverless, we'll build the list from device_status
       break;
 
     case 'device_status': {
-      const d = devices.get(msg.deviceId);
-      if (d) { d.isRecording = msg.isRecording; d.isStreaming = msg.isStreaming; }
+      const d = devices.get(msg.deviceId) || { deviceName: `Device-${msg.deviceId.slice(0,6)}`, deviceId: msg.deviceId };
+      d.isRecording = msg.isRecording; 
+      d.isStreaming = msg.isStreaming;
+      devices.set(msg.deviceId, d);
       refreshCards();
       if (msg.deviceId === selectedDeviceId) updatePanel();
       break;
@@ -227,37 +192,10 @@ function handleMsg(msg) {
       if (msg.deviceId === selectedDeviceId && isListening)
         playChunk(msg.chunk, msg.sampleRate || 16000, msg.channels || 1);
       break;
-
-    case 'recording_saved':
-      if (msg.deviceId === selectedDeviceId) {
-        toast(`Recording saved: ${msg.filename}`, 'success');
-        loadServerRecordings(msg.deviceId);
-      }
-      break;
-
-    case 'server_recording_saved':
-      toast(`☁️ Uploaded: ${msg.filename}`, 'success');
-      addServerRecording(msg.deviceId, msg);
-      if (msg.deviceId === selectedDeviceId) renderRecordingsList();
-      break;
-
-    case 'recordings_list':
-      serverRecordings.set(msg.deviceId, msg.recordings || []);
-      if (msg.deviceId === selectedDeviceId) renderRecordingsList();
-      break;
   }
 }
 
 // ─── Device List ──────────────────────────────────────────────────────────────
-function updateDeviceList(arr) {
-  devices.clear();
-  for (const d of arr) devices.set(d.deviceId, d);
-  if (selectedDeviceId && !devices.has(selectedDeviceId)) selectDevice(null);
-  refreshCards();
-}
-
-function clearDevices() { devices.clear(); refreshCards(); }
-
 function refreshCards() {
   $deviceList.querySelectorAll('.device-card').forEach(el => el.remove());
   if (devices.size === 0) { $noDevices.style.display = 'flex'; return; }
@@ -304,35 +242,57 @@ function selectDevice(deviceId) {
 
 // ─── Server Recordings ────────────────────────────────────────────────────────
 async function loadServerRecordings(deviceId) {
-  if (!authToken) return;
   try {
-    const res = await fetch(`${serverHttpUrl}/api/recordings/${deviceId}?token=${encodeURIComponent(authToken)}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    serverRecordings.set(deviceId, data.recordings || []);
+    const { data, error } = await supabase
+      .from('recordings')
+      .select('*')
+      .eq('device_id', deviceId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+
+    const mapped = data.map(r => {
+      const { data: publicUrlData } = supabase.storage.from('micnet_recordings').getPublicUrl(r.url);
+      return {
+        id: r.id,
+        filename: r.filename,
+        url: publicUrlData.publicUrl,
+        size: 0,
+        duration: null,
+      };
+    });
+
+    serverRecordings.set(deviceId, mapped);
     if (deviceId === selectedDeviceId) renderRecordingsList();
-  } catch {}
+  } catch (err) {
+    console.warn('Failed to load recordings:', err);
+  }
 }
 
 function addServerRecording(deviceId, rec) {
   const list = serverRecordings.get(deviceId) || [];
-  list.unshift(rec);
+  const { data: publicUrlData } = supabase.storage.from('micnet_recordings').getPublicUrl(rec.url);
+  list.unshift({
+    id: rec.id,
+    filename: rec.filename,
+    url: publicUrlData.publicUrl,
+    size: 0,
+    duration: null
+  });
   serverRecordings.set(deviceId, list);
 }
 
 async function deleteServerRecording(deviceId, filename) {
   if (!confirm(`Delete "${filename}"?`)) return;
   try {
-    const res = await fetch(`${serverHttpUrl}/api/recordings/${deviceId}/${filename}`, {
-      method: 'DELETE',
-      headers: { 'x-auth-token': authToken },
-    });
-    if (res.ok) {
-      const list = (serverRecordings.get(deviceId) || []).filter(r => r.filename !== filename);
-      serverRecordings.set(deviceId, list);
-      renderRecordingsList();
-      toast(`Deleted ${filename}`, 'info');
-    }
+    const path = `${deviceId}/${filename}`;
+    await supabase.storage.from('micnet_recordings').remove([path]);
+    await supabase.from('recordings').delete().eq('device_id', deviceId).eq('filename', filename);
+    
+    const list = (serverRecordings.get(deviceId) || []).filter(r => r.filename !== filename);
+    serverRecordings.set(deviceId, list);
+    renderRecordingsList();
+    toast(`Deleted ${filename}`, 'info');
   } catch { toast('Delete failed', 'error'); }
 }
 
@@ -351,7 +311,6 @@ function renderRecordingsList() {
     item.className = 'recording-item';
     const dur  = rec.duration ? `${Math.round(rec.duration)}s` : '';
     const size = rec.size ? formatBytes(rec.size) : '';
-    const downloadUrl = `${serverHttpUrl}${rec.url}?token=${encodeURIComponent(authToken)}`;
 
     item.innerHTML = `
       <div class="recording-item-icon">
@@ -362,10 +321,10 @@ function renderRecordingsList() {
       </div>
       <div class="recording-item-info">
         <div class="recording-item-name">${esc(rec.filename)}</div>
-        <div class="recording-item-meta">${[dur, size].filter(Boolean).join(' · ')} · ☁️ Server</div>
+        <div class="recording-item-meta">${[dur, size].filter(Boolean).join(' · ')} · ☁️ Supabase Storage</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
-        <a href="${downloadUrl}" download="${esc(rec.filename)}" class="rec-btn" title="Download">⬇</a>
+        <a href="${rec.url}" download target="_blank" class="rec-btn" title="Download">⬇</a>
         <button class="rec-btn rec-btn-del" onclick="deleteServerRecording('${esc(selectedDeviceId)}','${esc(rec.filename)}')" title="Delete">🗑</button>
       </div>`;
     $recList.appendChild(item);
@@ -482,7 +441,7 @@ function stopRemoteRec() {
   sendCmd('stop_recording', { deviceId: selectedDeviceId });
   stopRecTimer();
   updatePanel();
-  toast('Recording stopped — uploading to server…', 'success');
+  toast('Recording stopped — uploading to Supabase…', 'success');
 }
 
 // ─── Waveform ─────────────────────────────────────────────────────────────────

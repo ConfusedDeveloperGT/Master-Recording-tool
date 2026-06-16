@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MicNet - Remote Audio Monitoring</title>
+  <meta name="description" content="Secure, high-quality background audio recording and live streaming system for mobile devices.">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Ambient Background -->
+  <div class="mesh-bg" aria-hidden="true"></div>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="container nav-container">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+        </svg>
+        <span>MicNet</span>
+      </div>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it Works</a>
+        <a href="../web/index.html" class="btn btn-outline">Dashboard Login</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <header class="hero">
+    <div class="container hero-container">
+      <div class="hero-content">
+        <div class="badge">v2.0 Now Available</div>
+        <h1 class="hero-title">Remote Audio Monitoring Made <span class="text-gradient">Simple.</span></h1>
+        <p class="hero-subtitle">MicNet is a complete system for securely streaming and recording high-quality background audio from your mobile devices, controlled entirely from a web dashboard.</p>
+        <div class="hero-cta">
+          <a href="#download" class="btn btn-primary">Download App</a>
+          <a href="../web/index.html" class="btn btn-secondary">Open Dashboard →</a>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="glass-card mockup-wrapper">
+          <img src="assets/dashboard-mockup.png" alt="MicNet Dashboard Mockup" class="mockup-img" />
+          <div class="floating-badge badge-1">🎙️ Live Streaming Active</div>
+          <div class="floating-badge badge-2">🔒 E2E Secured</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Features Section -->
+  <section id="features" class="features section">
+    <div class="container">
+      <div class="section-header text-center">
+        <h2>Powerful Capabilities</h2>
+        <p>Everything you need for seamless audio control.</p>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card reveal">
+          <div class="feature-icon icon-blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+            </svg>
+          </div>
+          <h3>Real-time Live Listen</h3>
+          <p>Stream high-fidelity PCM audio directly from the device's microphone to your web dashboard with sub-second latency.</p>
+        </div>
+        
+        <div class="feature-card reveal" style="transition-delay: 100ms;">
+          <div class="feature-icon icon-purple">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <circle cx="12" cy="12" r="3" fill="currentColor"/>
+            </svg>
+          </div>
+          <h3>Remote Recording</h3>
+          <p>Trigger background recording sessions remotely. Files are saved in high-quality AAC format and automatically uploaded to the server.</p>
+        </div>
+
+        <div class="feature-card reveal" style="transition-delay: 200ms;">
+          <div class="feature-icon icon-green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <h3>Secure & Private</h3>
+          <p>All signaling and dashboard access is protected by a strict authentication token system, keeping your feeds completely private.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works Section -->
+  <section id="how-it-works" class="how-it-works section bg-darker">
+    <div class="container">
+      <div class="section-header">
+        <h2>How it Works</h2>
+        <p>Get up and running in minutes.</p>
+      </div>
+      
+      <div class="steps-container">
+        <div class="step reveal">
+          <div class="step-number">01</div>
+          <h3>Install Mobile App</h3>
+          <p>Download the MicNet APK/IPA on your target device and launch the app. Grant microphone permissions.</p>
+        </div>
+        
+        <div class="step reveal" style="transition-delay: 150ms;">
+          <div class="step-number">02</div>
+          <h3>Pair the Device</h3>
+          <p>Open the MicNet Web Dashboard and scan the QR code with the mobile app to securely link them.</p>
+        </div>
+        
+        <div class="step reveal" style="transition-delay: 300ms;">
+          <div class="step-number">03</div>
+          <h3>Listen & Record</h3>
+          <p>Monitor your devices from anywhere. Tap "Live Listen" to hear what's happening or trigger remote recordings.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section id="download" class="cta-section section text-center">
+    <div class="container reveal">
+      <h2>Ready to take control?</h2>
+      <p>MicNet is designed for seamless, robust background audio monitoring.</p>
+      <div class="cta-buttons">
+        <button class="btn btn-primary btn-large">Download APK v2.0</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+          </svg>
+          MicNet
+        </div>
+        <p class="copyright">&copy; 2026 MicNet Systems. For administrative use only.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

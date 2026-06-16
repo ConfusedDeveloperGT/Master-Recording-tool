@@ -20,6 +20,6 @@
 - [x] `App.tsx` — tab navigator
 
 ## Phase 4: Verify
-- [/] Start server
+- [x] Start server
 - [ ] Open web dashboard
 - [ ] Test mobile connection
